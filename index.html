@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script>
 /* ===== 설정: 아래 따옴표 안에 YouTube Data API 키를 넣으세요 (없어도 동작하지만 제목 가져오기·재생목록 일괄 추가가 제한됩니다) ===== */
-const API_KEY = 'AIzaSyCgvn4PnbECbowfQ_Z8hOLWj6fFgrITNpA';
+const API_KEY = 'YOUR_API_KEY';
 /* ==================================================================================================================== */
 (function(){ if(/KAKAOTALK/i.test(navigator.userAgent)) location.href='kakaotalk://web/openExternal?url='+encodeURIComponent(location.href); })();
 </script>
@@ -171,8 +171,12 @@ async function dbWrite(fn){ const d=await DB; return new Promise((res,rej)=>{ co
 /* ---------- 유튜브 주소 해석 ---------- */
 function parseText(text){
   const vids=[], lists=[];
-  const re=/(?:youtube\.com\/(?:watch\?[^\s]*?v=|shorts\/|embed\/|live\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/g;
-  let m; while((m=re.exec(text))) vids.push(m[1]);
+  const res=[
+    /(?:youtube\.com\/(?:watch\?[^\s"'<>]*?v=|shorts\/|embed\/|live\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/g, // 일반 주소
+    /ytimg\.com\/(?:vi|vi_webp)\/([A-Za-z0-9_-]{11})\//g,  // 썸네일 이미지 주소
+    /href=["']\/(?:watch\?v=|shorts\/)([A-Za-z0-9_-]{11})/g // 끌어온 HTML 안의 상대 주소
+  ];
+  let m; for(const re of res){ while((m=re.exec(text))) vids.push(m[1]); }
   const lr=/youtube\.com\/playlist\?[^\s]*?list=([A-Za-z0-9_-]+)/g;
   while((m=lr.exec(text))) lists.push(m[1]);
   return {vids:[...new Set(vids)], lists:[...new Set(lists)]};
@@ -379,9 +383,14 @@ window.addEventListener('dragover',e=>e.preventDefault());
 window.addEventListener('drop',e=>{
   e.preventDefault(); dragDepth=0; $('#drop').classList.remove('on');
   const dt=e.dataTransfer;
-  if(dt.files && dt.files.length){ addFiles(dt.files); return; }
-  const t=dt.getData('text/uri-list')||dt.getData('text/plain');
-  if(t) addFromText(t); else toast('추가할 수 있는 항목이 없어요');
+  // 썸네일을 끌면 브라우저가 이미지 파일과 영상 주소를 함께 넘기므로, 동영상·음악 파일만 골라내고 주소도 따로 확인
+  const media=[...(dt.files||[])].filter(f=>/^(video|audio)\//.test(f.type)||MEDIA_EXT.test(f.name));
+  if(media.length){ addFiles(media); return; }
+  let t=''; ['text/uri-list','text/plain','text/html'].forEach(k=>{ try{ t+='\n'+(dt.getData(k)||''); }catch(_){} });
+  const p=parseText(t);
+  if(p.vids.length||p.lists.length) addFromText(t);
+  else if(dt.files && dt.files.length) toast('동영상·음악 파일이나 유튜브 영상만 추가할 수 있어요');
+  else toast('유튜브 영상 주소를 찾지 못했어요');
 });
 
 $('#grid').addEventListener('click',e=>{
