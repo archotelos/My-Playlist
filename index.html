@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>My Playlist</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<script>
+/* ===== 설정: 아래 따옴표 안에 YouTube Data API 키를 넣으세요 (없어도 동작하지만 제목 가져오기·재생목록 일괄 추가가 제한됩니다) ===== */
+const API_KEY = 'AIzaSyCgvn4PnbECbowfQ_Z8hOLWj6fFgrITNpA';
+/* ==================================================================================================================== */
+(function(){ if(/KAKAOTALK/i.test(navigator.userAgent)) location.href='kakaotalk://web/openExternal?url='+encodeURIComponent(location.href); })();
+</script>
+<style>
+:root{--bg:#EEF1F6;--panel:#fff;--ink:#18202E;--muted:#5B6576;--line:#D5DBE5;--accent:#D6204A;--accent-ink:#fff;--warn:#9A5B00;--warn-bg:#FFF3DC;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root{--bg:#12161F;--panel:#1B212D;--ink:#E9EDF4;--muted:#9AA4B5;--line:#2E3747;--accent:#FF4D6D;--accent-ink:#1A0A10;--warn:#F2B560;--warn-bg:#35291A}}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;line-height:1.6}
+main{max-width:1240px;margin:0 auto;padding:24px 16px 40px}
+h1{font-size:1.4rem;margin:0 0 4px}
+.lead{color:var(--muted);margin:0 0 18px;font-size:.95rem}
+.row{display:flex;gap:8px;max-width:720px;flex-wrap:wrap}
+input[type=text],input[type=search]{flex:1;min-width:200px;font:inherit;padding:12px;border:1.5px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink)}
+input[type=text]:focus,input[type=search]:focus{outline:none;border-color:var(--accent)}
+button{font:inherit;cursor:pointer;border:none;border-radius:10px}
+button:focus-visible,.card:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.go{background:var(--accent);color:var(--accent-ink);font-weight:700;padding:0 18px;min-height:48px}
+.pick{background:var(--panel);color:var(--ink);border:1.5px solid var(--line);padding:0 14px;min-height:48px}
+.msg{margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--warn-bg);color:var(--warn);font-size:.92rem;max-width:720px}
+.wrap{display:grid;gap:20px;margin-top:18px}
+@media (min-width:860px){ .wrap{grid-template-columns:minmax(0,1fr) 400px;align-items:start} }
+.stage{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:14px;overflow:hidden}
+.stage > *{position:absolute;inset:0;width:100%;height:100%}
+.stage video{background:#000}
+.stage .empty{display:flex;align-items:center;justify-content:center;text-align:center;color:#9AA4B5;padding:20px;font-size:.95rem}
+.chan{text-align:center;font-weight:500;margin-top:10px;word-break:break-word}
+#now{text-align:center;color:var(--muted);font-size:.85rem}
+.ctrl{display:flex;justify-content:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+.ctrl > button{background:var(--panel);color:var(--ink);border:1.5px solid var(--line);padding:9px 16px}
+.seg{display:flex;border:1.5px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+.seg button{background:none;color:var(--muted);padding:0 12px;min-height:42px;min-width:46px;border-radius:0;font-size:.9rem;display:flex;align-items:center;justify-content:center}
+.seg svg{display:block}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);font-weight:500}
+.list{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.list-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.list-head span{color:var(--muted);font-size:.85rem}
+.tools{display:flex;gap:4px;flex-wrap:wrap}
+.tools button{background:none;border:1.5px solid var(--line);color:var(--muted);padding:3px 10px;font-size:.8rem;border-radius:8px}
+.tools button[aria-pressed=true]{border-color:var(--accent);color:var(--accent);font-weight:500}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;overflow-y:auto;max-height:66vh;padding:2px}
+.card{position:relative;padding:0;color:var(--ink);border-radius:10px;display:flex;flex-direction:column;gap:4px;cursor:pointer}
+.card .th{position:relative;aspect-ratio:16/9;border-radius:10px;overflow:hidden;background:var(--line);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:.8rem;font-weight:700}
+.card img{width:100%;height:100%;object-fit:cover;display:block}
+.card .no{position:absolute;left:6px;top:6px;background:rgba(0,0,0,.65);color:#fff;font-size:.72rem;padding:1px 6px;border-radius:6px}
+.card .tag{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.65);color:#fff;font-size:.68rem;padding:1px 6px;border-radius:6px}
+.card .tx{min-width:0;flex:1}
+.card .tt{font-size:.78rem;line-height:1.35;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.card .dt{display:none;font-size:.75rem;color:var(--muted)}
+.card .rn{display:none;width:2.6em;flex:none;text-align:right;color:var(--muted);font-size:.85rem;font-variant-numeric:tabular-nums}
+.card .del{position:absolute;right:4px;top:4px;width:26px;height:26px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:.85rem;line-height:1;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s}
+.card:hover .del,.card:focus-within .del{opacity:1}
+@media (hover:none){.card .del{opacity:.85}}
+.card.cur .th{outline:3px solid var(--accent);outline-offset:-3px}
+.card.cur .tt{color:var(--ink);font-weight:500}
+.grid.rows{grid-template-columns:1fr;gap:2px}
+.grid.rows .card{flex-direction:row;align-items:center;gap:12px;padding:6px}
+.grid.rows .card:hover,.grid.rows .card.cur{background:var(--bg)}
+.grid.rows .card .th{width:96px;flex:none;border-radius:6px}
+.grid.rows .card .no{display:none}
+.grid.rows .card .rn,.grid.rows .card .dt{display:block}
+.grid.rows .card .tt{font-size:.9rem;color:var(--ink)}
+.grid.rows .card .del{position:static;opacity:1;background:none;color:var(--muted);flex:none}
+.grid.rows .card.cur .th{outline-width:2px;outline-offset:-2px}
+.none{color:var(--muted);font-size:.9rem;text-align:center;padding:30px 10px}
+.foot{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.foot button{background:none;color:var(--muted);font-size:.8rem;padding:4px 8px;text-decoration:underline}
+.drop{position:fixed;inset:0;background:color-mix(in srgb, var(--accent) 18%, transparent);border:4px dashed var(--accent);display:none;align-items:center;justify-content:center;z-index:50;font-size:1.3rem;font-weight:700;color:var(--ink);pointer-events:none}
+.drop.on{display:flex}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:.9rem;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;text-align:center;z-index:60}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<main>
+  <h1>My Playlist</h1>
+  <p class="lead">유튜브 주소를 입력하거나 붙여넣기, 유튜브 영상이나 내 동영상 파일을 화면에 끌어다 놓으면 플레이리스트에 추가됩니다. 여러 주소를 한꺼번에 붙여넣어도 되고, 재생목록 주소를 넣으면 그 안의 영상이 모두 추가돼요.</p>
+  <div class="row">
+    <input id="inp" type="text" autocomplete="off" spellcheck="false" placeholder="유튜브 동영상·재생목록 주소">
+    <button class="go" id="add">추가</button>
+    <button class="pick" id="pick">파일 선택</button>
+    <input id="file" type="file" accept="video/*,audio/*" multiple hidden>
+  </div>
+  <div id="msg"></div>
+
+  <div class="wrap">
+    <div>
+      <div class="stage" id="stage">
+        <div class="empty" id="empty">목록에서 영상을 고르면 여기서 재생됩니다</div>
+        <div id="ytbox" hidden><div id="yt"></div></div>
+        <video id="vid" controls playsinline hidden></video>
+      </div>
+      <div class="chan" id="title"></div>
+      <div id="now"></div>
+      <div class="ctrl">
+        <button id="prev">◀ 이전</button>
+        <button id="next">다음 ▶</button>
+        <div class="seg" role="group" aria-label="재생 방식">
+          <button data-mode="cont" aria-pressed="true">연속재생</button>
+          <button data-mode="all" aria-pressed="false" title="전체 반복" aria-label="전체 반복"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg></button>
+          <button data-mode="one" aria-pressed="false" title="한 곡 반복" aria-label="한 곡 반복"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4zM13 15V9h-1l-2 1v1h1.5v4H13z"/></svg></button>
+          <button data-mode="shuf" aria-pressed="false" title="셔플" aria-label="셔플"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="currentColor"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <section class="list">
+      <div class="list-head">
+        <div><b>플레이리스트</b> <span id="count"></span></div>
+        <div class="tools">
+          <button data-sort="title" id="sTitle">제목순</button>
+          <button data-sort="added" id="sAdded">추가순</button>
+          <button data-view="grid" aria-pressed="true">격자</button>
+          <button data-view="rows" aria-pressed="false">목록</button>
+        </div>
+      </div>
+      <input id="q" type="search" placeholder="제목으로 찾기">
+      <div class="grid" id="grid"></div>
+      <div class="foot">
+        <button id="expTxt">내보내기 (TXT)</button>
+        <button id="expJson">내보내기 (JSON)</button>
+        <button id="imp">목록 가져오기</button>
+        <button id="clear">전체 삭제</button>
+        <input id="impFile" type="file" accept=".txt,.json,text/plain,application/json" hidden>
+      </div>
+    </section>
+  </div>
+</main>
+<div class="drop" id="drop">여기에 놓으면 플레이리스트에 추가돼요</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const API='https://www.googleapis.com/youtube/v3/';
+const hasKey=()=>API_KEY && API_KEY!=='YOUR_API_KEY';
+const MEDIA_EXT=/\.(mp4|webm|mov|m4v|mkv|ogv|mp3|m4a|aac|wav|ogg|oga|flac)$/i;
+let items=[], curId=null, yt=null, ytReady=false, ytPending=null, errStreak=0, objUrl=null;
+let shufQueue=[], shufHist=[];
+const st={ mode:'cont', sort:'added', dir:'asc', view:'grid' };
+try{ Object.assign(st, JSON.parse(localStorage.getItem('mypl-settings'))||{}); }catch(_){}
+const saveSt=()=>{ try{ localStorage.setItem('mypl-settings',JSON.stringify(st)); }catch(_){} };
+
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtDate=t=>{ const d=new Date(t); return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`; };
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+function showMsg(html){ $('#msg').innerHTML = html ? `<div class="msg">${html}</div>` : ''; }
+let tt; function toast(m){const el=$('#toast'); el.textContent=m; el.classList.add('show'); clearTimeout(tt); tt=setTimeout(()=>el.classList.remove('show'),2600)}
+
+/* ---------- 저장소 (IndexedDB: 개수 제한 없음, 브라우저 저장 공간만큼) ---------- */
+const DB=new Promise((res,rej)=>{
+  const r=indexedDB.open('my-playlist',1);
+  r.onupgradeneeded=()=>{ const d=r.result; d.createObjectStore('items',{keyPath:'id'}); d.createObjectStore('blobs'); };
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+});
+const req=r=>new Promise((res,rej)=>{ r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+async function dbAll(){ const d=await DB; return req(d.transaction('items').objectStore('items').getAll()); }
+async function dbBlob(id){ const d=await DB; return req(d.transaction('blobs').objectStore('blobs').get(id)); }
+async function dbWrite(fn){ const d=await DB; return new Promise((res,rej)=>{ const t=d.transaction(['items','blobs'],'readwrite'); fn(t.objectStore('items'),t.objectStore('blobs')); t.oncomplete=res; t.onerror=()=>rej(t.error); t.onabort=()=>rej(t.error); }); }
+
+/* ---------- 유튜브 주소 해석 ---------- */
+function parseText(text){
+  const vids=[], lists=[];
+  const re=/(?:youtube\.com\/(?:watch\?[^\s]*?v=|shorts\/|embed\/|live\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/g;
+  let m; while((m=re.exec(text))) vids.push(m[1]);
+  const lr=/youtube\.com\/playlist\?[^\s]*?list=([A-Za-z0-9_-]+)/g;
+  while((m=lr.exec(text))) lists.push(m[1]);
+  return {vids:[...new Set(vids)], lists:[...new Set(lists)]};
+}
+async function api(path, params){
+  const u=new URL(API+path);
+  Object.entries({...params,key:API_KEY}).forEach(([k,v])=>u.searchParams.set(k,v));
+  const j=await (await fetch(u)).json();
+  if(j.error) throw new Error(j.error.message);
+  return j;
+}
+async function playlistVideos(list){
+  let token='', out=[];
+  do{
+    const j=await api('playlistItems',{part:'contentDetails',playlistId:list,maxResults:50,...(token?{pageToken:token}:{})});
+    (j.items||[]).forEach(it=>{ if(it.contentDetails.videoPublishedAt) out.push(it.contentDetails.videoId); });
+    token=j.nextPageToken||'';
+    $('#now').textContent=`재생목록 불러오는 중… ${out.length}개`;
+  }while(token);
+  return out;
+}
+async function fetchTitles(ids){
+  const map={};
+  if(hasKey()){
+    for(let i=0;i<ids.length;i+=50){
+      const j=await api('videos',{part:'snippet',id:ids.slice(i,i+50).join(',')});
+      (j.items||[]).forEach(v=>map[v.id]=v.snippet.title);
+    }
+  } else {
+    await Promise.all(ids.map(async id=>{
+      try{ const j=await (await fetch('https://noembed.com/embed?url='+encodeURIComponent('https://www.youtube.com/watch?v='+id))).json(); if(j.title) map[id]=j.title; }catch(_){}
+    }));
+  }
+  return map;
+}
+
+/* ---------- 추가 ---------- */
+async function addFromText(text){
+  const {vids,lists}=parseText(text||'');
+  if(!vids.length && !lists.length){ toast('유튜브 동영상 주소를 찾지 못했어요'); return; }
+  showMsg('');
+  try{
+    let all=[...vids];
+    if(lists.length){
+      if(!hasKey()){ showMsg('재생목록을 통째로 추가하려면 index.html에 API 키가 필요해요. 동영상 주소는 하나씩 추가할 수 있어요.'); }
+      else for(const l of lists) all.push(...await playlistVideos(l));
+    }
+    const have=new Set(items.filter(i=>i.type==='yt').map(i=>i.vid));
+    const fresh=[...new Set(all)].filter(v=>!have.has(v));
+    const dup=all.length-fresh.length;
+    if(!fresh.length){ toast('이미 플레이리스트에 있는 영상이에요'); updateNow(); return; }
+    $('#now').textContent='제목 가져오는 중…';
+    const titles=await fetchTitles(fresh);
+    const base=Date.now(); const recs=[]; let missing=0;
+    fresh.forEach((v,i)=>{
+      if(hasKey() && !titles[v]){ missing++; return; } // 삭제·비공개 영상
+      recs.push({id:uid(),type:'yt',vid:v,title:titles[v]||('YouTube 동영상 '+v),added:base+i});
+    });
+    await dbWrite(s=>recs.forEach(r=>s.put(r)));
+    items.push(...recs); resetShuffle(); render();
+    toast(`${recs.length}개 추가했어요`+(dup?` · 중복 ${dup}개 제외`:'')+(missing?` · 재생 불가 ${missing}개 제외`:''));
+  }catch(e){ showMsg('추가하지 못했어요: '+esc(e.message)); }
+  updateNow();
+}
+async function addFiles(files){
+  const list=[...files].filter(f=>/^(video|audio)\//.test(f.type)||MEDIA_EXT.test(f.name));
+  if(!list.length){ toast('동영상·음악 파일만 추가할 수 있어요'); return; }
+  try{ navigator.storage && navigator.storage.persist && navigator.storage.persist(); }catch(_){}
+  const base=Date.now();
+  const recs=list.map((f,i)=>({id:uid(),type:'file',title:f.name.replace(/\.[^.]+$/,''),ext:(f.name.match(/\.([^.]+)$/)||['',''])[1].toUpperCase(),size:f.size,added:base+i}));
+  try{
+    await dbWrite((s,b)=>recs.forEach((r,i)=>{ s.put(r); b.put(list[i],r.id); }));
+    items.push(...recs); resetShuffle(); render();
+    toast(`파일 ${recs.length}개 추가했어요`);
+  }catch(e){ showMsg('파일을 저장하지 못했어요. 기기의 저장 공간이 부족할 수 있어요.'); }
+}
+async function removeItem(id){
+  await dbWrite((s,b)=>{ s.delete(id); b.delete(id); });
+  items=items.filter(i=>i.id!==id);
+  if(curId===id){ stopAll(); curId=null; $('#title').textContent=''; }
+  resetShuffle(); render();
+}
+
+/* ---------- 정렬·검색 ---------- */
+function visible(){
+  const q=$('#q').value.trim().toLowerCase();
+  const a=items.filter(i=>!q || i.title.toLowerCase().includes(q));
+  const k=st.dir==='asc'?1:-1;
+  a.sort((x,y)=> st.sort==='title' ? k*x.title.localeCompare(y.title,'ko',{numeric:true}) : k*(x.added-y.added));
+  return a;
+}
+function sortLabel(){
+  if(st.sort==='title') return st.dir==='asc'?'제목순 (가나다)':'제목순 (역순)';
+  return st.dir==='asc'?'추가순 (먼저 추가한 것부터)':'추가순 (최근 추가부터)';
+}
+function render(){
+  const list=visible(), q=$('#q').value.trim();
+  $('#sTitle').textContent='제목순'+(st.sort==='title'?(st.dir==='asc'?' ↑':' ↓'):'');
+  $('#sAdded').textContent='추가순'+(st.sort==='added'?(st.dir==='asc'?' ↑':' ↓'):'');
+  $('#sTitle').setAttribute('aria-pressed',st.sort==='title'); $('#sAdded').setAttribute('aria-pressed',st.sort==='added');
+  $('#count').textContent=`${items.length}개 · ${sortLabel()}${q?` · 검색 ${list.length}개`:''}`;
+  if(!items.length){ $('#grid').innerHTML='<div class="none">아직 비어 있어요.<br>유튜브 주소를 붙여넣거나 동영상 파일을 끌어다 놓으세요.</div>'; return; }
+  if(!list.length){ $('#grid').innerHTML='<div class="none">검색 결과가 없어요.</div>'; return; }
+  $('#grid').innerHTML=list.map((v,i)=>`<div class="card" tabindex="0" data-id="${v.id}" title="${esc(v.title)}">
+    <span class="rn">${i+1}</span>
+    <div class="th">${v.type==='yt'?`<img loading="lazy" src="https://i.ytimg.com/vi/${v.vid}/mqdefault.jpg" alt="">`:esc(v.ext||'FILE')}<span class="no">${i+1}</span>${v.type==='file'?'<span class="tag">내 파일</span>':''}</div>
+    <div class="tx"><div class="tt">${esc(v.title)}</div><div class="dt">${fmtDate(v.added)} 추가${v.type==='file'?' · 내 파일':''}</div></div>
+    <button class="del" data-del="${v.id}" aria-label="${esc(v.title)} 삭제">✕</button></div>`).join('');
+  markCurrent(true); updateNow();
+}
+function markCurrent(scroll){
+  document.querySelectorAll('.card.cur').forEach(c=>c.classList.remove('cur'));
+  const c=curId && document.querySelector(`.card[data-id="${curId}"]`);
+  if(c){ c.classList.add('cur'); if(scroll) c.scrollIntoView({block:'nearest'}); }
+}
+function updateNow(){
+  const list=visible(), i=list.findIndex(v=>v.id===curId);
+  const modeName={cont:'연속재생',all:'전체 반복',one:'한 곡 반복',shuf:'셔플'}[st.mode];
+  $('#now').textContent = i>=0 ? `${modeName} · ${i+1} / ${list.length}` : (items.length?modeName:'');
+}
+
+/* ---------- 재생 ---------- */
+function stopAll(){
+  const v=$('#vid'); v.pause(); v.removeAttribute('src'); v.load(); v.hidden=true;
+  if(objUrl){ URL.revokeObjectURL(objUrl); objUrl=null; }
+  try{ yt && yt.stopVideo(); }catch(_){}
+  $('#ytbox').hidden=true; $('#empty').hidden=false;
+}
+async function play(id){
+  const it=items.find(i=>i.id===id); if(!it) return;
+  curId=id; $('#empty').hidden=true; $('#title').textContent=it.title; markCurrent(true); updateNow();
+  if(st.mode==='shuf'){ shufQueue=shufQueue.filter(x=>x!==id); }
+  if(it.type==='yt'){
+    const v=$('#vid'); v.pause(); v.hidden=true; if(objUrl){ URL.revokeObjectURL(objUrl); objUrl=null; }
+    $('#ytbox').hidden=false;
+    if(!ytReady){ ytPending=it.vid; return; }
+    if(!yt) createYt(it.vid); else yt.loadVideoById(it.vid);
+  } else {
+    try{ yt && yt.pauseVideo(); }catch(_){}
+    $('#ytbox').hidden=true;
+    const blob=await dbBlob(id);
+    if(!blob){ toast('파일을 찾을 수 없어 건너뜁니다'); setTimeout(()=>step(1,true),800); return; }
+    if(objUrl) URL.revokeObjectURL(objUrl);
+    objUrl=URL.createObjectURL(blob);
+    const v=$('#vid'); v.hidden=false; v.src=objUrl;
+    v.play().catch(()=>{});
+  }
+}
+function createYt(vid){
+  yt=new YT.Player('yt',{videoId:vid,playerVars:{playsinline:1,rel:0,autoplay:1,origin:location.origin},
+    events:{
+      onStateChange:e=>{ if(e.data===YT.PlayerState.PLAYING) errStreak=0; if(e.data===YT.PlayerState.ENDED) onEnded(); },
+      onError:()=>{ errStreak++; if(errStreak>=3){ showMsg('영상이 계속 재생되지 않아요. 외부 재생이 막힌 영상이거나, 앱 안의 브라우저에서 열었다면 크롬·사파리로 열어 주세요.'); return; }
+        toast('재생할 수 없는 영상이라 건너뜁니다'); setTimeout(()=>step(1,true),900); }
+    }});
+}
+window.onYouTubeIframeAPIReady=()=>{ ytReady=true; if(ytPending){ const v=ytPending; ytPending=null; if(!yt) createYt(v); else yt.loadVideoById(v); } };
+$('#vid').addEventListener('ended',onEnded);
+$('#vid').addEventListener('error',()=>{ if($('#vid').getAttribute('src')){ toast('이 파일 형식은 브라우저에서 재생할 수 없어 건너뜁니다'); setTimeout(()=>step(1,true),900); } });
+$('#vid').addEventListener('playing',()=>errStreak=0);
+
+function onEnded(){
+  if(st.mode==='one'){
+    const it=items.find(i=>i.id===curId);
+    if(it && it.type==='yt'){ yt.seekTo(0); yt.playVideo(); } else { const v=$('#vid'); v.currentTime=0; v.play().catch(()=>{}); }
+    return;
+  }
+  step(1,true);
+}
+function resetShuffle(){ shufQueue=[]; }
+function step(dir,auto){
+  const list=visible(); if(!list.length) return;
+  if(st.mode==='shuf'){
+    if(dir<0){ const p=shufHist.pop(); if(p){ shufQueue.unshift(curId); play(p); } else toast('이전 기록이 없어요'); return; }
+    shufQueue=shufQueue.filter(id=>list.some(v=>v.id===id));
+    if(!shufQueue.length) shufQueue=list.map(v=>v.id).filter(id=>id!==curId||list.length===1);
+    const next=shufQueue.splice(Math.floor(Math.random()*shufQueue.length),1)[0];
+    if(curId) shufHist.push(curId);
+    play(next); return;
+  }
+  const i=list.findIndex(v=>v.id===curId);
+  let n=i<0?0:i+dir;
+  if(n>=list.length){ if(st.mode==='all') n=0; else { toast(auto?'끝까지 모두 재생했어요':'마지막 영상이에요'); return; } }
+  if(n<0){ if(st.mode==='all') n=list.length-1; else { toast('첫 번째 영상이에요'); return; } }
+  play(list[n].id);
+}
+
+/* ---------- 이벤트 ---------- */
+$('#add').onclick=()=>{ const t=$('#inp').value; $('#inp').value=''; addFromText(t); };
+$('#inp').addEventListener('keydown',e=>{ if(e.key==='Enter') $('#add').click(); });
+$('#inp').addEventListener('paste',e=>{ const t=e.clipboardData.getData('text'); if(parseText(t).vids.length||parseText(t).lists.length){ e.preventDefault(); addFromText(t); } });
+document.addEventListener('paste',e=>{
+  if(e.target.closest('input')) return;
+  const files=[...(e.clipboardData.files||[])]; if(files.length){ addFiles(files); return; }
+  const t=e.clipboardData.getData('text'); if(t) addFromText(t);
+});
+$('#pick').onclick=()=>$('#file').click();
+$('#file').onchange=e=>{ addFiles(e.target.files); e.target.value=''; };
+
+let dragDepth=0;
+window.addEventListener('dragenter',e=>{ e.preventDefault(); dragDepth++; $('#drop').classList.add('on'); });
+window.addEventListener('dragleave',()=>{ if(--dragDepth<=0){ dragDepth=0; $('#drop').classList.remove('on'); } });
+window.addEventListener('dragover',e=>e.preventDefault());
+window.addEventListener('drop',e=>{
+  e.preventDefault(); dragDepth=0; $('#drop').classList.remove('on');
+  const dt=e.dataTransfer;
+  if(dt.files && dt.files.length){ addFiles(dt.files); return; }
+  const t=dt.getData('text/uri-list')||dt.getData('text/plain');
+  if(t) addFromText(t); else toast('추가할 수 있는 항목이 없어요');
+});
+
+$('#grid').addEventListener('click',e=>{
+  const d=e.target.closest('[data-del]'); if(d){ e.stopPropagation(); removeItem(d.dataset.del); return; }
+  const c=e.target.closest('.card'); if(c){ if(st.mode==='shuf'&&curId) shufHist.push(curId); play(c.dataset.id); }
+});
+$('#grid').addEventListener('keydown',e=>{ if(e.key==='Enter' && e.target.classList.contains('card')) e.target.click(); });
+$('#prev').onclick=()=>step(-1,false);
+$('#next').onclick=()=>step(1,false);
+$('#q').addEventListener('input',render);
+
+document.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click',()=>{ st.mode=b.dataset.mode; saveSt(); applyMode(); }));
+function applyMode(){ document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mode===st.mode)); resetShuffle(); shufHist=[]; updateNow(); }
+document.querySelectorAll('[data-sort]').forEach(b=>b.addEventListener('click',()=>{
+  const k=b.dataset.sort;
+  if(st.sort===k) st.dir=st.dir==='asc'?'desc':'asc'; else { st.sort=k; st.dir='asc'; }
+  saveSt(); render();
+}));
+function setView(v){ st.view=v; saveSt(); $('#grid').classList.toggle('rows',v==='rows'); document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===v)); markCurrent(true); }
+document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)));
+
+function download(name,text,type){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([text],{type}));
+  a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function exportList(fmt){
+  const yts=visible().filter(i=>i.type==='yt'); // 현재 정렬 순서대로
+  if(!yts.length){ toast('내보낼 유튜브 영상이 없어요'); return; }
+  const day=fmtDate(Date.now()).replace(/\./g,'');
+  if(fmt==='txt'){
+    const lines=[`# My Playlist · ${yts.length}개 · ${fmtDate(Date.now())}`, ...yts.map(i=>`https://www.youtube.com/watch?v=${i.vid}\t${i.title.replace(/[\r\n\t]+/g,' ')}`)];
+    download(`my-playlist-${day}.txt`, lines.join('\r\n'), 'text/plain;charset=utf-8');
+  } else {
+    download(`my-playlist-${day}.json`, JSON.stringify({app:'my-playlist',items:yts.map(i=>({v:i.vid,t:i.title,a:i.added}))},null,1), 'application/json');
+  }
+  const nf=items.filter(i=>i.type==='file').length;
+  toast(`유튜브 영상 ${yts.length}개를 내보냈어요`+(nf?` · 내 파일 ${nf}개는 제외`:''));
+}
+$('#expTxt').onclick=()=>exportList('txt');
+$('#expJson').onclick=()=>exportList('json');
+$('#imp').onclick=()=>$('#impFile').click();
+$('#impFile').onchange=async e=>{
+  const f=e.target.files[0]; e.target.value=''; if(!f) return;
+  const text=await f.text();
+  if(!/\.json$/i.test(f.name) && !/^\s*\{/.test(text)){ addFromText(text); return; } // TXT: 안의 유튜브 주소를 모두 추가
+  try{
+    const j=JSON.parse(text); const have=new Set(items.filter(i=>i.type==='yt').map(i=>i.vid));
+    const recs=(j.items||[]).filter(x=>x.v&&!have.has(x.v)).map(x=>({id:uid(),type:'yt',vid:x.v,title:x.t||('YouTube 동영상 '+x.v),added:x.a||Date.now()}));
+    await dbWrite(s=>recs.forEach(r=>s.put(r)));
+    items.push(...recs); resetShuffle(); render(); toast(`${recs.length}개 가져왔어요`);
+  }catch(_){ toast('My Playlist에서 내보낸 파일이 아니에요'); }
+};
+$('#clear').onclick=async()=>{
+  if(!items.length || !confirm(`플레이리스트의 ${items.length}개를 모두 삭제할까요? 되돌릴 수 없어요.`)) return;
+  await dbWrite((s,b)=>{ s.clear(); b.clear(); });
+  items=[]; stopAll(); curId=null; $('#title').textContent=''; render();
+};
+
+/* ---------- 시작 ---------- */
+applyMode(); setView(st.view);
+dbAll().then(a=>{ items=a; render(); }).catch(()=>showMsg('이 브라우저에서는 플레이리스트를 저장할 수 없어요. 개인정보 보호(시크릿) 모드인지 확인해 주세요.'));
+const s=document.createElement('script'); s.src='https://www.youtube.com/iframe_api'; document.head.appendChild(s);
+</script>
+</body>
+</html>
