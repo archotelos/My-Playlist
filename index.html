@@ -47,7 +47,9 @@ button:focus-visible,.card:focus-visible{outline:3px solid var(--accent);outline
 .list{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
 .list-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .list-head span{color:var(--muted);font-size:.85rem}
-.tools{display:flex;gap:4px;flex-wrap:wrap}
+.tools{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.tgroup{display:flex;gap:4px;flex-wrap:wrap}
+.sep{width:1px;height:22px;background:var(--line);margin:0 6px;flex:none}
 .tools button{background:none;border:1.5px solid var(--line);color:var(--muted);padding:3px 10px;font-size:.8rem;border-radius:8px}
 .tools button[aria-pressed=true]{border-color:var(--accent);color:var(--accent);font-weight:500}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;overflow-y:auto;max-height:66vh;padding:2px}
@@ -85,6 +87,14 @@ button:focus-visible,.card:focus-visible{outline:3px solid var(--accent);outline
 .gplay,.gdel{width:34px;height:34px;flex:none;color:var(--muted)!important;font-size:.85rem}
 .gplay:hover{color:var(--accent)!important}
 .grid.rows .card.child{padding-left:22px}
+.hd{cursor:grab;touch-action:none;user-select:none;color:var(--muted);font-size:1rem;line-height:1;display:flex;align-items:center;justify-content:center}
+.card .hd{position:absolute;left:4px;bottom:4px;z-index:2;width:28px;height:28px;border-radius:6px;background:rgba(0,0,0,.6);color:#fff}
+.ghead .hd{width:28px;height:34px;flex:none}
+.grid.rows .card .hd{left:2px;bottom:2px;width:24px;height:24px;font-size:.85rem}
+.card img{-webkit-user-drag:none}
+.dragging{opacity:.45}
+.noselect{user-select:none;-webkit-user-select:none}
+.noselect .hd{cursor:grabbing}
 .none{color:var(--muted);font-size:.9rem;text-align:center;padding:30px 10px}
 .foot{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
 .foot button{background:none;color:var(--muted);font-size:.8rem;padding:4px 8px;text-decoration:underline}
@@ -130,11 +140,17 @@ button:focus-visible,.card:focus-visible{outline:3px solid var(--accent);outline
       <div class="list-head">
         <div><b>플레이리스트</b> <span id="count"></span></div>
         <div class="tools">
-          <button data-sort="title" id="sTitle">제목순</button>
-          <button data-sort="added" id="sAdded">추가순</button>
-          <button data-sort="newest" id="sNew">최신순</button>
-          <button data-view="grid" aria-pressed="true">격자</button>
-          <button data-view="rows" aria-pressed="false">목록</button>
+          <div class="tgroup" role="group" aria-label="배열">
+            <button data-sort="title" id="sTitle">제목순</button>
+            <button data-sort="added" id="sAdded">추가순</button>
+            <button data-sort="newest" id="sNew">최신순</button>
+            <button data-sort="ab" id="sAB" title="재생목록 안의 영상을 제목순으로">AB</button>
+          </div>
+          <span class="sep" aria-hidden="true"></span>
+          <div class="tgroup" role="group" aria-label="보기 방식">
+            <button data-view="grid" aria-pressed="true">격자</button>
+            <button data-view="rows" aria-pressed="false">목록</button>
+          </div>
         </div>
       </div>
       <input id="q" type="search" placeholder="제목으로 찾기">
@@ -306,8 +322,8 @@ async function removeItem(id){
 
 /* ---------- 정렬·검색 ---------- */
 // 상위 항목: 재생목록 묶음 / 단일 영상 / 내 파일.  재생목록 안의 영상은 하위 항목
-function structure(){
-  const q=$('#q').value.trim().toLowerCase(), k=st.dir==='asc'?1:-1;
+function structure(ignoreSearch){
+  const q=ignoreSearch?'':$('#q').value.trim().toLowerCase(), k=st.dir==='asc'?1:-1;
   const match=t=>!q || (t||'').toLowerCase().includes(q);
   const groups={}, tops=[];
   for(const it of items){
@@ -316,21 +332,26 @@ function structure(){
       const G=groups[it.g]; G.items.push(it); G.added=Math.min(G.added,it.added);
     } else tops.push({kind:'item',item:it,title:it.title,added:it.added});
   }
+  const byTitle=(x,y)=>k*x.title.localeCompare(y.title,'ko',{numeric:true});
+  const BIG=1e15, idx=arr=>{ const m=new Map(); (arr||[]).forEach((key,i)=>m.set(key,i)); return key=>m.has(key)?m.get(key):BIG; };
   const out=[];
   for(const t of tops){
     if(t.kind==='item'){ if(match(t.title)) out.push(t); continue; }
     t.total=t.items.length;
     if(!match(t.title)) t.items=t.items.filter(i=>match(i.title));
     if(!t.items.length) continue;
-    // 하위 영상 정렬
-    if(st.sort==='title') t.items.sort((x,y)=>k*x.title.localeCompare(y.title,'ko',{numeric:true}));
+    // 재생목록 안의 영상 정렬
+    if(st.sort==='title'||st.sort==='ab') t.items.sort(byTitle);
     else if(st.sort==='added') t.items.sort((x,y)=>k*(x.added-y.added));
-    else t.items.sort((x,y)=>k*(y.pub||'').localeCompare(x.pub||'') || x.added-y.added);
+    else if(st.sort==='newest') t.items.sort((x,y)=>k*(y.pub||'').localeCompare(x.pub||'') || x.added-y.added);
+    else { const ix=idx((st.inner||{})[t.g]); t.items.sort((x,y)=>(ix(x.id)-ix(y.id)) || x.added-y.added); }
     out.push(t);
   }
-  // 상위 항목 정렬 (최신순일 때는 추가한 순서 유지)
-  if(st.sort==='title') out.sort((x,y)=>k*x.title.localeCompare(y.title,'ko',{numeric:true}));
+  // 상위 항목 정렬 (최신순·AB는 추가한 순서 유지)
+  const key=t=>t.kind==='group'?t.g:t.item.id;
+  if(st.sort==='title') out.sort(byTitle);
   else if(st.sort==='added') out.sort((x,y)=>k*(x.added-y.added));
+  else if(st.sort==='custom'){ const ix=idx(st.topOrder); out.sort((x,y)=>(ix(key(x))-ix(key(y))) || x.added-y.added); }
   else out.sort((x,y)=>x.added-y.added);
   return out;
 }
@@ -339,13 +360,15 @@ function visible(){ return structure().flatMap(t=>t.kind==='group'?t.items:[t.it
 function sortLabel(){
   if(st.sort==='title') return st.dir==='asc'?'제목순 (가나다)':'제목순 (역순)';
   if(st.sort==='added') return st.dir==='asc'?'추가순 (먼저 추가한 것부터)':'추가순 (최근 추가부터)';
+  if(st.sort==='ab') return st.dir==='asc'?'AB (재생목록 안: 제목 가나다)':'AB 역순 (재생목록 안: 제목 역순)';
+  if(st.sort==='custom') return '직접 정한 순서';
   return st.dir==='asc'?'최신순 (재생목록 안: 최근 업로드부터)':'최신순 역순 (재생목록 안: 오래된 것부터)';
 }
 st.collapsed=st.collapsed||{};
-function cardHtml(v,n,child){
-  return `<div class="card${child?' child':''}" tabindex="0" data-id="${v.id}" title="${esc(v.title)}">
+function cardHtml(v,n,child,g){
+  return `<div class="card${child?' child':''}" tabindex="0" data-id="${v.id}" ${child?`data-child-of="${g}"`:`data-top="${v.id}"`} title="${esc(v.title)}">
     <span class="rn">${n}</span>
-    <div class="th">${v.type==='yt'?`<img loading="lazy" src="https://i.ytimg.com/vi/${v.vid}/mqdefault.jpg" alt="">`:esc(v.ext||'FILE')}<span class="no">${n}</span>${v.type==='file'?'<span class="tag">내 파일</span>':''}</div>
+    <div class="th"><span class="hd" title="끌어서 순서 바꾸기">⠿</span>${v.type==='yt'?`<img loading="lazy" draggable="false" src="https://i.ytimg.com/vi/${v.vid}/mqdefault.jpg" alt="">`:esc(v.ext||'FILE')}<span class="no">${n}</span>${v.type==='file'?'<span class="tag">내 파일</span>':''}</div>
     <div class="tx"><div class="tt">${esc(v.title)}</div><div class="dt">${v.pub?fmtDate(v.pub)+' 업로드 · ':''}${fmtDate(v.added)} 추가${v.type==='file'?' · 내 파일':''}</div></div>
     <button class="del" data-del="${v.id}" aria-label="${esc(v.title)} 삭제">✕</button></div>`;
 }
@@ -354,7 +377,8 @@ function render(){
   $('#sTitle').textContent='제목순'+(st.sort==='title'?(st.dir==='asc'?' ↑':' ↓'):'');
   $('#sAdded').textContent='추가순'+(st.sort==='added'?(st.dir==='asc'?' ↑':' ↓'):'');
   $('#sNew').textContent='최신순'+(st.sort==='newest'?(st.dir==='asc'?' ↑':' ↓'):'');
-  [['#sTitle','title'],['#sAdded','added'],['#sNew','newest']].forEach(([el,k])=>$(el).setAttribute('aria-pressed',st.sort===k));
+  $('#sAB').textContent='AB'+(st.sort==='ab'?(st.dir==='asc'?' ↑':' ↓'):'');
+  [['#sTitle','title'],['#sAdded','added'],['#sNew','newest'],['#sAB','ab']].forEach(([el,k])=>$(el).setAttribute('aria-pressed',st.sort===k));
   const shown=tops.reduce((n,t)=>n+(t.kind==='group'?t.items.length:1),0);
   $('#count').textContent=`${items.length}개 · ${sortLabel()}${q?` · 검색 ${shown}개`:''}`;
   if(!items.length){ $('#grid').innerHTML='<div class="none">아직 비어 있어요.<br>유튜브 주소를 붙여넣거나 동영상 파일을 끌어다 놓으세요.</div>'; return; }
@@ -363,12 +387,13 @@ function render(){
   for(const t of tops){
     if(t.kind==='item'){ html.push(cardHtml(t.item,++n,false)); continue; }
     const closed=!q && st.collapsed[t.g];
-    html.push(`<div class="ghead${closed?' closed':''}">
+    html.push(`<div class="ghead${closed?' closed':''}" data-top="${t.g}">
+      <span class="hd" title="끌어서 순서 바꾸기">⠿</span>
       <button class="gtog" data-gtog="${t.g}" aria-expanded="${!closed}"><span class="arw">▾</span><span class="gname">${esc(t.title)}</span><span class="gc">재생목록 · ${q?`${t.items.length} / ${t.total}`:t.total}개</span></button>
       <button class="gplay" data-gplay="${t.g}" title="이 재생목록 처음부터 재생">▶</button>
       <button class="gdel" data-gdel="${t.g}" title="재생목록 통째로 삭제" aria-label="${esc(t.title)} 재생목록 삭제">✕</button></div>`);
     if(closed) n+=t.items.length;
-    else t.items.forEach(v=>html.push(cardHtml(v,++n,true)));
+    else t.items.forEach(v=>html.push(cardHtml(v,++n,true,t.g)));
   }
   $('#grid').innerHTML=html.join('');
   markCurrent(true); updateNow();
@@ -449,6 +474,65 @@ function step(dir,auto){
   if(n<0){ if(st.mode==='all') n=list.length-1; else { toast('첫 번째 영상이에요'); return; } }
   play(list[n].id);
 }
+
+/* ---------- 끌어서 순서 바꾸기 ---------- */
+let drag=null;
+const grid=$('#grid');
+function unitNodes(node){ // 상위 단위: 카드 1개 또는 재생목록(제목줄 + 하위 영상)
+  if(node.classList.contains('ghead')){
+    const g=node.dataset.top; return [node,...grid.querySelectorAll(`[data-child-of="${CSS.escape(g)}"]`)];
+  }
+  return [node];
+}
+grid.addEventListener('pointerdown',e=>{
+  const h=e.target.closest('.hd'); if(!h) return;
+  if($('#q').value.trim()){ toast('검색 중에는 순서를 바꿀 수 없어요. 검색어를 지워 주세요'); return; }
+  e.preventDefault();
+  const el=h.closest('[data-top],[data-child-of]');
+  const child=el.dataset.childOf;
+  drag={el,child,nodes:child?[el]:unitNodes(el),id:e.pointerId,moved:false};
+  drag.nodes.forEach(n=>n.classList.add('dragging'));
+  document.body.classList.add('noselect');
+  h.setPointerCapture(e.pointerId);
+});
+grid.addEventListener('pointermove',e=>{
+  if(!drag||e.pointerId!==drag.id) return;
+  // 가장자리에서 자동 스크롤
+  const r=grid.getBoundingClientRect();
+  if(e.clientY<r.top+40) grid.scrollTop-=12; else if(e.clientY>r.bottom-40) grid.scrollTop+=12;
+  const under=document.elementFromPoint(e.clientX,e.clientY); if(!under) return;
+  let tgt=under.closest('[data-top],[data-child-of]'); if(!tgt||!grid.contains(tgt)) return;
+  if(drag.child){
+    if(tgt.dataset.childOf!==drag.child||tgt===drag.el) return; // 같은 재생목록 안에서만
+  } else {
+    if(tgt.dataset.childOf) tgt=grid.querySelector(`.ghead[data-top="${CSS.escape(tgt.dataset.childOf)}"]`);
+    if(!tgt||drag.nodes.includes(tgt)) return;
+  }
+  const tr=tgt.getBoundingClientRect();
+  const vertical=grid.classList.contains('rows')||tgt.classList.contains('ghead');
+  const after=vertical? e.clientY>tr.top+tr.height/2 : e.clientX>tr.left+tr.width/2;
+  const tNodes=drag.child?[tgt]:unitNodes(tgt);
+  const ref=after? tNodes[tNodes.length-1].nextSibling : tNodes[0];
+  if(ref===drag.nodes[0]) return;
+  drag.nodes.forEach(n=>grid.insertBefore(n,ref));
+  drag.moved=true;
+});
+function endDrag(e){
+  if(!drag||e.pointerId!==drag.id) return;
+  const d=drag; drag=null;
+  d.nodes.forEach(n=>n.classList.remove('dragging'));
+  document.body.classList.remove('noselect');
+  if(!d.moved) return;
+  // 지금까지의 순서를 '직접 정한 순서'로 고정한 뒤, 화면에서 바뀐 부분을 반영
+  const tops=structure(true);
+  st.topOrder=tops.map(t=>t.kind==='group'?t.g:t.item.id);
+  st.inner={}; tops.forEach(t=>{ if(t.kind==='group') st.inner[t.g]=t.items.map(i=>i.id); });
+  if(d.child) st.inner[d.child]=[...grid.querySelectorAll(`[data-child-of="${CSS.escape(d.child)}"]`)].map(c=>c.dataset.id);
+  else st.topOrder=[...grid.querySelectorAll('[data-top]')].map(n=>n.dataset.top);
+  st.sort='custom'; saveSt(); resetShuffle(); render();
+}
+grid.addEventListener('pointerup',endDrag);
+grid.addEventListener('pointercancel',endDrag);
 
 /* ---------- 이벤트 ---------- */
 $('#add').onclick=()=>{ const t=$('#inp').value; $('#inp').value=''; addFromText(t); };
