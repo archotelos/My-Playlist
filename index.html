@@ -121,6 +121,7 @@ button:focus-visible,.card:focus-visible{outline:3px solid var(--accent);outline
         <div class="tools">
           <button data-sort="title" id="sTitle">제목순</button>
           <button data-sort="added" id="sAdded">추가순</button>
+          <button data-sort="newest" id="sNew">최신순</button>
           <button data-view="grid" aria-pressed="true">격자</button>
           <button data-view="rows" aria-pressed="false">목록</button>
         </div>
@@ -169,17 +170,25 @@ async function dbBlob(id){ const d=await DB; return req(d.transaction('blobs').o
 async function dbWrite(fn){ const d=await DB; return new Promise((res,rej)=>{ const t=d.transaction(['items','blobs'],'readwrite'); fn(t.objectStore('items'),t.objectStore('blobs')); t.oncomplete=res; t.onerror=()=>rej(t.error); t.onabort=()=>rej(t.error); }); }
 
 /* ---------- 유튜브 주소 해석 ---------- */
-function parseText(text){
-  const vids=[], lists=[];
-  const res=[
+// 텍스트에서 유튜브 영상(v)·재생목록(l)을 나온 순서대로 찾기
+function parseSeq(text){
+  const found=[];
+  const vres=[
     /(?:youtube\.com\/(?:watch\?[^\s"'<>]*?v=|shorts\/|embed\/|live\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/g, // 일반 주소
     /ytimg\.com\/(?:vi|vi_webp)\/([A-Za-z0-9_-]{11})\//g,  // 썸네일 이미지 주소
     /href=["']\/(?:watch\?v=|shorts\/)([A-Za-z0-9_-]{11})/g // 끌어온 HTML 안의 상대 주소
   ];
-  let m; for(const re of res){ while((m=re.exec(text))) vids.push(m[1]); }
-  const lr=/youtube\.com\/playlist\?[^\s]*?list=([A-Za-z0-9_-]+)/g;
-  while((m=lr.exec(text))) lists.push(m[1]);
-  return {vids:[...new Set(vids)], lists:[...new Set(lists)]};
+  let m;
+  for(const re of vres){ while((m=re.exec(text))) found.push({pos:m.index,type:'v',id:m[1]}); }
+  const lr=/youtube\.com\/playlist\?[^\s"'<>]*?list=([A-Za-z0-9_-]+)/g;
+  while((m=lr.exec(text))) found.push({pos:m.index,type:'l',id:m[1]});
+  found.sort((x,y)=>x.pos-y.pos);
+  const seen=new Set();
+  return found.filter(f=>{ const k=f.type+f.id; if(seen.has(k)) return false; seen.add(k); return true; });
+}
+function parseText(text){
+  const q=parseSeq(text);
+  return {vids:q.filter(x=>x.type==='v').map(x=>x.id), lists:q.filter(x=>x.type==='l').map(x=>x.id)};
 }
 async function api(path, params){
   const u=new URL(API+path);
@@ -198,16 +207,17 @@ async function playlistVideos(list){
   }while(token);
   return out;
 }
-async function fetchTitles(ids){
+async function fetchInfo(ids){
   const map={};
   if(hasKey()){
     for(let i=0;i<ids.length;i+=50){
       const j=await api('videos',{part:'snippet',id:ids.slice(i,i+50).join(',')});
-      (j.items||[]).forEach(v=>map[v.id]=v.snippet.title);
+      (j.items||[]).forEach(v=>map[v.id]={t:v.snippet.title,p:v.snippet.publishedAt||''});
+      $('#now').textContent=`제목·날짜 가져오는 중… ${Math.min(i+50,ids.length)} / ${ids.length}`;
     }
   } else {
     await Promise.all(ids.map(async id=>{
-      try{ const j=await (await fetch('https://noembed.com/embed?url='+encodeURIComponent('https://www.youtube.com/watch?v='+id))).json(); if(j.title) map[id]=j.title; }catch(_){}
+      try{ const j=await (await fetch('https://noembed.com/embed?url='+encodeURIComponent('https://www.youtube.com/watch?v='+id))).json(); if(j.title) map[id]={t:j.title,p:''}; }catch(_){}
     }));
   }
   return map;
@@ -215,26 +225,37 @@ async function fetchTitles(ids){
 
 /* ---------- 추가 ---------- */
 async function addFromText(text){
-  const {vids,lists}=parseText(text||'');
-  if(!vids.length && !lists.length){ toast('유튜브 동영상 주소를 찾지 못했어요'); return; }
+  const seq=parseSeq(text||'');
+  if(!seq.length){ toast('유튜브 동영상 주소를 찾지 못했어요'); return; }
   showMsg('');
   try{
-    let all=[...vids];
-    if(lists.length){
-      if(!hasKey()){ showMsg('재생목록을 통째로 추가하려면 index.html에 API 키가 필요해요. 동영상 주소는 하나씩 추가할 수 있어요.'); }
-      else for(const l of lists) all.push(...await playlistVideos(l));
-    }
     const have=new Set(items.filter(i=>i.type==='yt').map(i=>i.vid));
-    const fresh=[...new Set(all)].filter(v=>!have.has(v));
-    const dup=all.length-fresh.length;
-    if(!fresh.length){ toast('이미 플레이리스트에 있는 영상이에요'); updateNow(); return; }
-    $('#now').textContent='제목 가져오는 중…';
-    const titles=await fetchTitles(fresh);
-    const base=Date.now(); const recs=[]; let missing=0;
-    fresh.forEach((v,i)=>{
-      if(hasKey() && !titles[v]){ missing++; return; } // 삭제·비공개 영상
-      recs.push({id:uid(),type:'yt',vid:v,title:titles[v]||('YouTube 동영상 '+v),added:base+i});
-    });
+    const groups=[]; let dup=0, noKeyLists=0;
+    for(const sq of seq){
+      if(sq.type==='v'){
+        if(have.has(sq.id)){ dup++; continue; }
+        have.add(sq.id); groups.push({vids:[sq.id]});            // 단일 영상: 묶음 없음
+      } else {
+        if(!hasKey()){ noKeyLists++; continue; }
+        let name='재생목록';
+        try{ const pl=await api('playlists',{part:'snippet',id:sq.id}); if(pl.items&&pl.items[0]) name=pl.items[0].snippet.title; }catch(_){}
+        const fresh=[];
+        (await playlistVideos(sq.id)).forEach(v=>{ if(have.has(v)) dup++; else { have.add(v); fresh.push(v); } });
+        if(fresh.length) groups.push({g:uid(),gn:name,vids:fresh});   // 재생목록: 하나의 묶음
+      }
+    }
+    if(noKeyLists) showMsg('재생목록을 통째로 추가하려면 index.html에 API 키가 필요해요. 동영상 주소는 하나씩 추가할 수 있어요.');
+    const all=groups.flatMap(g=>g.vids);
+    if(!all.length){ if(!noKeyLists) toast('이미 플레이리스트에 있는 영상이에요'); updateNow(); return; }
+    const info=await fetchInfo(all);
+    let t=Date.now(), missing=0; const recs=[];
+    for(const gr of groups) for(const v of gr.vids){
+      const inf=info[v];
+      if(hasKey() && !inf){ missing++; continue; } // 삭제·비공개 영상
+      const r={id:uid(),type:'yt',vid:v,title:(inf&&inf.t)||('YouTube 동영상 '+v),pub:(inf&&inf.p)||'',added:t++};
+      if(gr.g){ r.g=gr.g; r.gn=gr.gn; }
+      recs.push(r);
+    }
     await dbWrite(s=>recs.forEach(r=>s.put(r)));
     items.push(...recs); resetShuffle(); render();
     toast(`${recs.length}개 추가했어요`+(dup?` · 중복 ${dup}개 제외`:'')+(missing?` · 재생 불가 ${missing}개 제외`:''));
@@ -265,25 +286,38 @@ function visible(){
   const q=$('#q').value.trim().toLowerCase();
   const a=items.filter(i=>!q || i.title.toLowerCase().includes(q));
   const k=st.dir==='asc'?1:-1;
-  a.sort((x,y)=> st.sort==='title' ? k*x.title.localeCompare(y.title,'ko',{numeric:true}) : k*(x.added-y.added));
+  if(st.sort==='title') a.sort((x,y)=>k*x.title.localeCompare(y.title,'ko',{numeric:true}));
+  else if(st.sort==='added') a.sort((x,y)=>k*(x.added-y.added));
+  else {
+    // 최신순: 묶음(재생목록·단일 영상·내 파일)은 추가한 순서대로 두고, 재생목록 안의 영상만 업로드 날짜로 정렬
+    const gk=i=>i.g||i.id, gStart={};
+    a.forEach(i=>{ const g=gk(i); gStart[g]=Math.min(gStart[g]??Infinity,i.added); });
+    a.sort((x,y)=>{
+      const gx=gk(x), gy=gk(y);
+      if(gx!==gy) return gStart[gx]-gStart[gy];
+      return k*(y.pub||'').localeCompare(x.pub||'') || x.added-y.added;
+    });
+  }
   return a;
 }
 function sortLabel(){
   if(st.sort==='title') return st.dir==='asc'?'제목순 (가나다)':'제목순 (역순)';
-  return st.dir==='asc'?'추가순 (먼저 추가한 것부터)':'추가순 (최근 추가부터)';
+  if(st.sort==='added') return st.dir==='asc'?'추가순 (먼저 추가한 것부터)':'추가순 (최근 추가부터)';
+  return st.dir==='asc'?'최신순 (재생목록 안에서 최근 업로드부터)':'최신순 역순 (재생목록 안에서 오래된 것부터)';
 }
 function render(){
   const list=visible(), q=$('#q').value.trim();
   $('#sTitle').textContent='제목순'+(st.sort==='title'?(st.dir==='asc'?' ↑':' ↓'):'');
   $('#sAdded').textContent='추가순'+(st.sort==='added'?(st.dir==='asc'?' ↑':' ↓'):'');
-  $('#sTitle').setAttribute('aria-pressed',st.sort==='title'); $('#sAdded').setAttribute('aria-pressed',st.sort==='added');
+  $('#sNew').textContent='최신순'+(st.sort==='newest'?(st.dir==='asc'?' ↑':' ↓'):'');
+  [['#sTitle','title'],['#sAdded','added'],['#sNew','newest']].forEach(([el,k])=>$(el).setAttribute('aria-pressed',st.sort===k));
   $('#count').textContent=`${items.length}개 · ${sortLabel()}${q?` · 검색 ${list.length}개`:''}`;
   if(!items.length){ $('#grid').innerHTML='<div class="none">아직 비어 있어요.<br>유튜브 주소를 붙여넣거나 동영상 파일을 끌어다 놓으세요.</div>'; return; }
   if(!list.length){ $('#grid').innerHTML='<div class="none">검색 결과가 없어요.</div>'; return; }
   $('#grid').innerHTML=list.map((v,i)=>`<div class="card" tabindex="0" data-id="${v.id}" title="${esc(v.title)}">
     <span class="rn">${i+1}</span>
     <div class="th">${v.type==='yt'?`<img loading="lazy" src="https://i.ytimg.com/vi/${v.vid}/mqdefault.jpg" alt="">`:esc(v.ext||'FILE')}<span class="no">${i+1}</span>${v.type==='file'?'<span class="tag">내 파일</span>':''}</div>
-    <div class="tx"><div class="tt">${esc(v.title)}</div><div class="dt">${fmtDate(v.added)} 추가${v.type==='file'?' · 내 파일':''}</div></div>
+    <div class="tx"><div class="tt">${esc(v.title)}</div><div class="dt">${v.gn?'▤ '+esc(v.gn)+' · ':''}${v.pub?fmtDate(v.pub)+' 업로드 · ':''}${fmtDate(v.added)} 추가${v.type==='file'?' · 내 파일':''}</div></div>
     <button class="del" data-del="${v.id}" aria-label="${esc(v.title)} 삭제">✕</button></div>`).join('');
   markCurrent(true); updateNow();
 }
@@ -425,7 +459,7 @@ function exportList(fmt){
     const lines=[`# My Playlist · ${yts.length}개 · ${fmtDate(Date.now())}`, ...yts.map(i=>`https://www.youtube.com/watch?v=${i.vid}\t${i.title.replace(/[\r\n\t]+/g,' ')}`)];
     download(`my-playlist-${day}.txt`, lines.join('\r\n'), 'text/plain;charset=utf-8');
   } else {
-    download(`my-playlist-${day}.json`, JSON.stringify({app:'my-playlist',items:yts.map(i=>({v:i.vid,t:i.title,a:i.added}))},null,1), 'application/json');
+    download(`my-playlist-${day}.json`, JSON.stringify({app:'my-playlist',items:yts.map(i=>({v:i.vid,t:i.title,a:i.added,p:i.pub||'',g:i.g||'',gn:i.gn||''}))},null,1), 'application/json');
   }
   const nf=items.filter(i=>i.type==='file').length;
   toast(`유튜브 영상 ${yts.length}개를 내보냈어요`+(nf?` · 내 파일 ${nf}개는 제외`:''));
@@ -439,7 +473,7 @@ $('#impFile').onchange=async e=>{
   if(!/\.json$/i.test(f.name) && !/^\s*\{/.test(text)){ addFromText(text); return; } // TXT: 안의 유튜브 주소를 모두 추가
   try{
     const j=JSON.parse(text); const have=new Set(items.filter(i=>i.type==='yt').map(i=>i.vid));
-    const recs=(j.items||[]).filter(x=>x.v&&!have.has(x.v)).map(x=>({id:uid(),type:'yt',vid:x.v,title:x.t||('YouTube 동영상 '+x.v),added:x.a||Date.now()}));
+    const recs=(j.items||[]).filter(x=>x.v&&!have.has(x.v)).map(x=>({id:uid(),type:'yt',vid:x.v,title:x.t||('YouTube 동영상 '+x.v),added:x.a||Date.now(),pub:x.p||'',...(x.g?{g:x.g,gn:x.gn||'재생목록'}:{})}));
     await dbWrite(s=>recs.forEach(r=>s.put(r)));
     items.push(...recs); resetShuffle(); render(); toast(`${recs.length}개 가져왔어요`);
   }catch(_){ toast('My Playlist에서 내보낸 파일이 아니에요'); }
