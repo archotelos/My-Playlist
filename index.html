@@ -74,6 +74,17 @@ button:focus-visible,.card:focus-visible{outline:3px solid var(--accent);outline
 .grid.rows .card .tt{font-size:.9rem;color:var(--ink)}
 .grid.rows .card .del{position:static;opacity:1;background:none;color:var(--muted);flex:none}
 .grid.rows .card.cur .th{outline-width:2px;outline-offset:-2px}
+.ghead{grid-column:1/-1;display:flex;align-items:center;gap:4px;background:var(--bg);border-radius:10px;padding:2px 4px;margin-top:6px}
+.ghead:first-child{margin-top:0}
+.ghead button{background:none;color:var(--ink)}
+.gtog{flex:1;min-width:0;display:flex;align-items:center;gap:8px;padding:8px 6px;text-align:left}
+.gtog .arw{transition:transform .15s;color:var(--muted)}
+.ghead.closed .arw{transform:rotate(-90deg)}
+.gtog .gname{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gtog .gc{color:var(--muted);font-size:.8rem;white-space:nowrap}
+.gplay,.gdel{width:34px;height:34px;flex:none;color:var(--muted)!important;font-size:.85rem}
+.gplay:hover{color:var(--accent)!important}
+.grid.rows .card.child{padding-left:22px}
 .none{color:var(--muted);font-size:.9rem;text-align:center;padding:30px 10px}
 .foot{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
 .foot button{background:none;color:var(--muted);font-size:.8rem;padding:4px 8px;text-decoration:underline}
@@ -171,17 +182,20 @@ async function dbWrite(fn){ const d=await DB; return new Promise((res,rej)=>{ co
 
 /* ---------- 유튜브 주소 해석 ---------- */
 // 텍스트에서 유튜브 영상(v)·재생목록(l)을 나온 순서대로 찾기
+// list= 가 붙은 주소(재생목록 페이지, 재생목록 안 영상 주소 모두)는 재생목록 전체로 처리
+const BAD_LIST=/^(RD|LL|WL|UL)/; // 믹스·좋아요·나중에 볼 동영상은 개인/자동 목록이라 불가 → 영상 하나로 처리
 function parseSeq(text){
-  const found=[];
-  const vres=[
-    /(?:youtube\.com\/(?:watch\?[^\s"'<>]*?v=|shorts\/|embed\/|live\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/g, // 일반 주소
-    /ytimg\.com\/(?:vi|vi_webp)\/([A-Za-z0-9_-]{11})\//g,  // 썸네일 이미지 주소
-    /href=["']\/(?:watch\?v=|shorts\/)([A-Za-z0-9_-]{11})/g // 끌어온 HTML 안의 상대 주소
-  ];
-  let m;
-  for(const re of vres){ while((m=re.exec(text))) found.push({pos:m.index,type:'v',id:m[1]}); }
-  const lr=/youtube\.com\/playlist\?[^\s"'<>]*?list=([A-Za-z0-9_-]+)/g;
-  while((m=lr.exec(text))) found.push({pos:m.index,type:'l',id:m[1]});
+  const found=[]; let m;
+  const urlRe=/(?:https?:\/\/)?(?:[\w-]+\.)?(?:youtube\.com|youtu\.be)\/[^\s"'<>]+/g;
+  const vIn=u=>{ const x=u.match(/(?:[?&]v=|shorts\/|embed\/|live\/|\/v\/|youtu\.be\/)([A-Za-z0-9_-]{11})/); return x&&x[1]; };
+  while((m=urlRe.exec(text))){
+    const u=m[0].replace(/&amp;/g,'&');
+    const l=(u.match(/[?&]list=([A-Za-z0-9_-]+)/)||[])[1];
+    if(l && !BAD_LIST.test(l)) found.push({pos:m.index,type:'l',id:l});
+    else { const v=vIn(u); if(v) found.push({pos:m.index,type:'v',id:v}); }
+  }
+  const extra=[/ytimg\.com\/(?:vi|vi_webp)\/([A-Za-z0-9_-]{11})\//g, /href=["']\/(?:watch\?v=|shorts\/)([A-Za-z0-9_-]{11})/g];
+  for(const re of extra){ while((m=re.exec(text))) found.push({pos:m.index,type:'v',id:m[1]}); }
   found.sort((x,y)=>x.pos-y.pos);
   const seen=new Set();
   return found.filter(f=>{ const k=f.type+f.id; if(seen.has(k)) return false; seen.add(k); return true; });
@@ -274,6 +288,15 @@ async function addFiles(files){
     toast(`파일 ${recs.length}개 추가했어요`);
   }catch(e){ showMsg('파일을 저장하지 못했어요. 기기의 저장 공간이 부족할 수 있어요.'); }
 }
+async function removeGroup(g){
+  const ids=items.filter(i=>i.g===g).map(i=>i.id); if(!ids.length) return;
+  const name=items.find(i=>i.g===g).gn||'재생목록';
+  if(!confirm(`'${name}' 재생목록의 영상 ${ids.length}개를 모두 삭제할까요?`)) return;
+  await dbWrite((s,b)=>ids.forEach(id=>{ s.delete(id); b.delete(id); }));
+  items=items.filter(i=>i.g!==g); delete st.collapsed[g]; saveSt();
+  if(ids.includes(curId)){ stopAll(); curId=null; $('#title').textContent=''; }
+  resetShuffle(); render();
+}
 async function removeItem(id){
   await dbWrite((s,b)=>{ s.delete(id); b.delete(id); });
   items=items.filter(i=>i.id!==id);
@@ -282,43 +305,72 @@ async function removeItem(id){
 }
 
 /* ---------- 정렬·검색 ---------- */
-function visible(){
-  const q=$('#q').value.trim().toLowerCase();
-  const a=items.filter(i=>!q || i.title.toLowerCase().includes(q));
-  const k=st.dir==='asc'?1:-1;
-  if(st.sort==='title') a.sort((x,y)=>k*x.title.localeCompare(y.title,'ko',{numeric:true}));
-  else if(st.sort==='added') a.sort((x,y)=>k*(x.added-y.added));
-  else {
-    // 최신순: 묶음(재생목록·단일 영상·내 파일)은 추가한 순서대로 두고, 재생목록 안의 영상만 업로드 날짜로 정렬
-    const gk=i=>i.g||i.id, gStart={};
-    a.forEach(i=>{ const g=gk(i); gStart[g]=Math.min(gStart[g]??Infinity,i.added); });
-    a.sort((x,y)=>{
-      const gx=gk(x), gy=gk(y);
-      if(gx!==gy) return gStart[gx]-gStart[gy];
-      return k*(y.pub||'').localeCompare(x.pub||'') || x.added-y.added;
-    });
+// 상위 항목: 재생목록 묶음 / 단일 영상 / 내 파일.  재생목록 안의 영상은 하위 항목
+function structure(){
+  const q=$('#q').value.trim().toLowerCase(), k=st.dir==='asc'?1:-1;
+  const match=t=>!q || (t||'').toLowerCase().includes(q);
+  const groups={}, tops=[];
+  for(const it of items){
+    if(it.g){
+      if(!groups[it.g]){ groups[it.g]={kind:'group',g:it.g,title:it.gn||'재생목록',added:it.added,items:[]}; tops.push(groups[it.g]); }
+      const G=groups[it.g]; G.items.push(it); G.added=Math.min(G.added,it.added);
+    } else tops.push({kind:'item',item:it,title:it.title,added:it.added});
   }
-  return a;
+  const out=[];
+  for(const t of tops){
+    if(t.kind==='item'){ if(match(t.title)) out.push(t); continue; }
+    t.total=t.items.length;
+    if(!match(t.title)) t.items=t.items.filter(i=>match(i.title));
+    if(!t.items.length) continue;
+    // 하위 영상 정렬
+    if(st.sort==='title') t.items.sort((x,y)=>k*x.title.localeCompare(y.title,'ko',{numeric:true}));
+    else if(st.sort==='added') t.items.sort((x,y)=>k*(x.added-y.added));
+    else t.items.sort((x,y)=>k*(y.pub||'').localeCompare(x.pub||'') || x.added-y.added);
+    out.push(t);
+  }
+  // 상위 항목 정렬 (최신순일 때는 추가한 순서 유지)
+  if(st.sort==='title') out.sort((x,y)=>k*x.title.localeCompare(y.title,'ko',{numeric:true}));
+  else if(st.sort==='added') out.sort((x,y)=>k*(x.added-y.added));
+  else out.sort((x,y)=>x.added-y.added);
+  return out;
 }
+// 재생 순서 = 화면에 보이는 순서를 펼친 것 (접힌 재생목록 안의 영상도 포함)
+function visible(){ return structure().flatMap(t=>t.kind==='group'?t.items:[t.item]); }
 function sortLabel(){
   if(st.sort==='title') return st.dir==='asc'?'제목순 (가나다)':'제목순 (역순)';
   if(st.sort==='added') return st.dir==='asc'?'추가순 (먼저 추가한 것부터)':'추가순 (최근 추가부터)';
-  return st.dir==='asc'?'최신순 (재생목록 안에서 최근 업로드부터)':'최신순 역순 (재생목록 안에서 오래된 것부터)';
+  return st.dir==='asc'?'최신순 (재생목록 안: 최근 업로드부터)':'최신순 역순 (재생목록 안: 오래된 것부터)';
+}
+st.collapsed=st.collapsed||{};
+function cardHtml(v,n,child){
+  return `<div class="card${child?' child':''}" tabindex="0" data-id="${v.id}" title="${esc(v.title)}">
+    <span class="rn">${n}</span>
+    <div class="th">${v.type==='yt'?`<img loading="lazy" src="https://i.ytimg.com/vi/${v.vid}/mqdefault.jpg" alt="">`:esc(v.ext||'FILE')}<span class="no">${n}</span>${v.type==='file'?'<span class="tag">내 파일</span>':''}</div>
+    <div class="tx"><div class="tt">${esc(v.title)}</div><div class="dt">${v.pub?fmtDate(v.pub)+' 업로드 · ':''}${fmtDate(v.added)} 추가${v.type==='file'?' · 내 파일':''}</div></div>
+    <button class="del" data-del="${v.id}" aria-label="${esc(v.title)} 삭제">✕</button></div>`;
 }
 function render(){
-  const list=visible(), q=$('#q').value.trim();
+  const tops=structure(), q=$('#q').value.trim();
   $('#sTitle').textContent='제목순'+(st.sort==='title'?(st.dir==='asc'?' ↑':' ↓'):'');
   $('#sAdded').textContent='추가순'+(st.sort==='added'?(st.dir==='asc'?' ↑':' ↓'):'');
   $('#sNew').textContent='최신순'+(st.sort==='newest'?(st.dir==='asc'?' ↑':' ↓'):'');
   [['#sTitle','title'],['#sAdded','added'],['#sNew','newest']].forEach(([el,k])=>$(el).setAttribute('aria-pressed',st.sort===k));
-  $('#count').textContent=`${items.length}개 · ${sortLabel()}${q?` · 검색 ${list.length}개`:''}`;
+  const shown=tops.reduce((n,t)=>n+(t.kind==='group'?t.items.length:1),0);
+  $('#count').textContent=`${items.length}개 · ${sortLabel()}${q?` · 검색 ${shown}개`:''}`;
   if(!items.length){ $('#grid').innerHTML='<div class="none">아직 비어 있어요.<br>유튜브 주소를 붙여넣거나 동영상 파일을 끌어다 놓으세요.</div>'; return; }
-  if(!list.length){ $('#grid').innerHTML='<div class="none">검색 결과가 없어요.</div>'; return; }
-  $('#grid').innerHTML=list.map((v,i)=>`<div class="card" tabindex="0" data-id="${v.id}" title="${esc(v.title)}">
-    <span class="rn">${i+1}</span>
-    <div class="th">${v.type==='yt'?`<img loading="lazy" src="https://i.ytimg.com/vi/${v.vid}/mqdefault.jpg" alt="">`:esc(v.ext||'FILE')}<span class="no">${i+1}</span>${v.type==='file'?'<span class="tag">내 파일</span>':''}</div>
-    <div class="tx"><div class="tt">${esc(v.title)}</div><div class="dt">${v.gn?'▤ '+esc(v.gn)+' · ':''}${v.pub?fmtDate(v.pub)+' 업로드 · ':''}${fmtDate(v.added)} 추가${v.type==='file'?' · 내 파일':''}</div></div>
-    <button class="del" data-del="${v.id}" aria-label="${esc(v.title)} 삭제">✕</button></div>`).join('');
+  if(!tops.length){ $('#grid').innerHTML='<div class="none">검색 결과가 없어요.</div>'; return; }
+  let n=0; const html=[];
+  for(const t of tops){
+    if(t.kind==='item'){ html.push(cardHtml(t.item,++n,false)); continue; }
+    const closed=!q && st.collapsed[t.g];
+    html.push(`<div class="ghead${closed?' closed':''}">
+      <button class="gtog" data-gtog="${t.g}" aria-expanded="${!closed}"><span class="arw">▾</span><span class="gname">${esc(t.title)}</span><span class="gc">재생목록 · ${q?`${t.items.length} / ${t.total}`:t.total}개</span></button>
+      <button class="gplay" data-gplay="${t.g}" title="이 재생목록 처음부터 재생">▶</button>
+      <button class="gdel" data-gdel="${t.g}" title="재생목록 통째로 삭제" aria-label="${esc(t.title)} 재생목록 삭제">✕</button></div>`);
+    if(closed) n+=t.items.length;
+    else t.items.forEach(v=>html.push(cardHtml(v,++n,true)));
+  }
+  $('#grid').innerHTML=html.join('');
   markCurrent(true); updateNow();
 }
 function markCurrent(scroll){
@@ -428,6 +480,9 @@ window.addEventListener('drop',e=>{
 });
 
 $('#grid').addEventListener('click',e=>{
+  const tg=e.target.closest('[data-gtog]'); if(tg){ const g=tg.dataset.gtog; st.collapsed[g]=!st.collapsed[g]; saveSt(); render(); return; }
+  const gp=e.target.closest('[data-gplay]'); if(gp){ const G=structure().find(t=>t.g===gp.dataset.gplay); if(G&&G.items.length){ if(st.mode==='shuf'&&curId) shufHist.push(curId); play(G.items[0].id); } return; }
+  const gd=e.target.closest('[data-gdel]'); if(gd){ removeGroup(gd.dataset.gdel); return; }
   const d=e.target.closest('[data-del]'); if(d){ e.stopPropagation(); removeItem(d.dataset.del); return; }
   const c=e.target.closest('.card'); if(c){ if(st.mode==='shuf'&&curId) shufHist.push(curId); play(c.dataset.id); }
 });
