@@ -401,10 +401,22 @@ function render(){
   $('#grid').innerHTML=html.join('');
   markCurrent(true); updateNow();
 }
+// 목록 상자 안에서만 스크롤 (페이지 전체는 움직이지 않음)
+function scrollListTo(c){
+  const g=$('#grid'), gr=g.getBoundingClientRect(), cr=c.getBoundingClientRect();
+  if(cr.top<gr.top) g.scrollTop-=gr.top-cr.top+4;
+  else if(cr.bottom>gr.bottom) g.scrollTop+=cr.bottom-gr.bottom+4;
+}
+// 재생 프레임 전체가 화면 맨 위에 보이도록 페이지 스크롤
+function showStage(){
+  const r=$('#stage').getBoundingClientRect();
+  const fits=r.top>=0 && r.bottom<=window.innerHeight;
+  if(!fits) window.scrollTo({top:Math.max(0,window.scrollY+r.top-8),behavior:'smooth'});
+}
 function markCurrent(scroll){
   document.querySelectorAll('.card.cur').forEach(c=>c.classList.remove('cur'));
   const c=curId && document.querySelector(`.card[data-id="${curId}"]`);
-  if(c){ c.classList.add('cur'); if(scroll) c.scrollIntoView({block:'nearest'}); }
+  if(c){ c.classList.add('cur'); if(scroll) scrollListTo(c); }
 }
 function updateNow(){
   const list=visible(), i=list.findIndex(v=>v.id===curId);
@@ -421,7 +433,7 @@ function stopAll(){
 }
 async function play(id){
   const it=items.find(i=>i.id===id); if(!it) return;
-  curId=id; $('#empty').hidden=true; $('#title').textContent=it.title; markCurrent(true); updateNow();
+  curId=id; $('#empty').hidden=true; $('#title').textContent=it.title; markCurrent(true); updateNow(); showStage();
   if(st.mode==='shuf'){ shufQueue=shufQueue.filter(x=>x!==id); }
   if(it.type==='yt'){
     const v=$('#vid'); v.pause(); v.hidden=true; if(objUrl){ URL.revokeObjectURL(objUrl); objUrl=null; }
