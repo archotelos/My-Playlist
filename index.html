@@ -33,7 +33,10 @@ button:focus-visible,.card:focus-visible{outline:3px solid var(--accent);outline
 @media (min-width:860px){ .wrap{grid-template-columns:minmax(0,1fr) 400px;align-items:start} }
 .stage{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:14px;overflow:hidden}
 .stage > *{position:absolute;inset:0;width:100%;height:100%}
-.stage video{background:#000}
+.stage video{background:#000;object-fit:contain}
+/* 유튜브 플레이어(iframe)는 #ytbox 안쪽에 생기므로 직접 크기를 지정해야 프레임에 꼭 맞음 */
+#ytbox > *,#ytbox iframe{display:block;width:100%!important;height:100%!important;border:0}
+.stage [hidden]{display:none!important}
 .stage .empty{display:flex;align-items:center;justify-content:center;text-align:center;color:#9AA4B5;padding:20px;font-size:.95rem}
 .chan{text-align:center;font-weight:500;margin-top:10px;word-break:break-word}
 #now{text-align:center;color:var(--muted);font-size:.85rem}
@@ -437,7 +440,7 @@ async function play(id){
   }
 }
 function createYt(vid){
-  yt=new YT.Player('yt',{videoId:vid,playerVars:{playsinline:1,rel:0,autoplay:1,origin:location.origin},
+  yt=new YT.Player('yt',{videoId:vid,width:'100%',height:'100%',playerVars:{playsinline:1,rel:0,autoplay:1,origin:location.origin},
     events:{
       onStateChange:e=>{ if(e.data===YT.PlayerState.PLAYING) errStreak=0; if(e.data===YT.PlayerState.ENDED) onEnded(); },
       onError:()=>{ errStreak++; if(errStreak>=3){ showMsg('영상이 계속 재생되지 않아요. 외부 재생이 막힌 영상이거나, 앱 안의 브라우저에서 열었다면 크롬·사파리로 열어 주세요.'); return; }
